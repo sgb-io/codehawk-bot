@@ -23,6 +23,8 @@
     "test:watch": "jest --watch --notify --notifyMode=change --coverage"
   },
   "dependencies": {
+    "@octokit/webhooks": "^7.6.4",
+    "codehawk-cli": "^3.0.0",
     "probot": "^9.5.3"
   },
   "devDependencies": {
