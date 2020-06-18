@@ -1,11 +1,8 @@
 import { Application, Octokit, Context } from 'probot'
-// import { addComplexityToFile  } from 'codehawk-cli'
+import { calculateComplexity } from 'codehawk-cli'
 import { Webhooks } from '@octokit/webhooks'
 
-// TODO expose addComplexityToFile from codehawk-cli
-// this would skip coverage mapping and dependency counts
-
-// @see https://github.com/probot/linter/blob/master/index.js
+// Reference impl. https://github.com/probot/linter/blob/master/index.js
 
 interface Result {
   filename: string
@@ -24,7 +21,7 @@ const generatePrComment = (results: Array<Result>): string => {
     ### Codehawk Static Analysis Results
     ${results.map((result) => {
       return `
-        - ${result.filename}, ${result.metrics}
+        - ${result.filename}, ${JSON.stringify(result.metrics)}
       `
     })}
   `
@@ -49,8 +46,7 @@ const analyzeFiles = (
 
     return {
       filename: file.filename,
-      // metrics: addComplexityToFile(text)
-      metrics: 'TODO metrics!'
+      metrics: calculateComplexity(text)
     }
   }))
 }
