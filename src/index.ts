@@ -126,21 +126,17 @@ const analyzeFiles = (
 
 export = (app: Application) => {
 
-  app.on('pull_request.edited', async (context) => {
-    console.log('webhook received for pull_request.edited')
+  const runCodehawkOnPr = async (context: Context<Webhooks.WebhookPayloadPullRequest>) => {
     const compare = await context.github.repos.compareCommits(context.repo({
       base: context.payload.pull_request.base.sha,
       head: context.payload.pull_request.head.sha
     }))
 
-    console.log('analyzing files...')
     const analyzedFiles: Array<any> = await analyzeFiles(compare, context)
-    console.log('analyzedFiles', analyzedFiles)
     const filesWithMetrics = analyzedFiles.filter(f => !!f.metrics)
 
     if (filesWithMetrics.length === 0) {
       // Do nothing - no metrics were generated for this change
-      console.warn('no changes.')
       return
     }
 
@@ -148,22 +144,22 @@ export = (app: Application) => {
     const params = context.issue({ body: comment })
 
     await context.github.issues.createComment(params)
-    console.log('PR edit detected, analysis was done and comment was added!')
+  }
+
+  app.on('pull_request.edited', async (context) => {
+    await runCodehawkOnPr(context)
   })
 
-  // app.on('pull_request.opened', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
+  app.on('pull_request.opened', async (context) => {
+    await runCodehawkOnPr(context)
+  })
 
-  // app.on('pull_request.synchronize', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
+  app.on('pull_request.synchronize', async (context) => {
+    await runCodehawkOnPr(context)
+  })
 
-  // app.on('pull_request.reopened', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
+  app.on('pull_request.reopened', async (context) => {
+    await runCodehawkOnPr(context)
+  })
 
 }
