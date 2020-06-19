@@ -32,7 +32,6 @@ const getChangeEmoji = (diff: number): string => {
 }
 
 const formatComplexityScore = (score: number): string => {
-
   const rounded = round(score)
   const emoji = getScoreEmoji(score)
 
@@ -48,8 +47,10 @@ const generateTableLines = (filteredResults: Array<Result>): string => {
     }
 
     const { lineEnd, codehawkScore } = metrics
-    const previousCodehawkScore = (previousMetrics ? previousMetrics.codehawkScore : undefined)
-    const previous = previousCodehawkScore ? formatComplexityScore(previousCodehawkScore) : 'N/A'
+    // Note - we invert the codehawkScore numbers here.
+    // This is because the original scale is confusing.
+    const previousCodehawkScore = (previousMetrics ? 100 - previousMetrics.codehawkScore : undefined)
+    const previous = previousCodehawkScore ? formatComplexityScore(100 - previousCodehawkScore) : 'N/A'
     const updated = formatComplexityScore(codehawkScore)
     const change = codehawkScore - (previousCodehawkScore || 0)
     const diff = `${change.toFixed(2)}% ${getChangeEmoji(change)}`
