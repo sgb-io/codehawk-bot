@@ -1427,10 +1427,10 @@ co@^4.6.0:
   resolved "https://registry.yarnpkg.com/co/-/co-4.6.0.tgz#6ea6bdf3d853ae54ccb8e47bfa0bf3f9031fb184"
   integrity sha1-bqa989hTrlTMuOR7+gvz+QMfsYQ=
 
-codehawk-cli@^4.0.2:
-  version "4.0.2"
-  resolved "https://registry.yarnpkg.com/codehawk-cli/-/codehawk-cli-4.0.2.tgz#9139a27962bbc9de43a9baf0daf229dd8ac5b07b"
-  integrity sha512-Y5Qy5r5akokw4fR9UPwCtxS+kEGbZIZXNcW3/4UrKmAcwMft5S8A47K9ahF0kYZREUwIJbRez5E4xzybYux4Zw==
+codehawk-cli@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/codehawk-cli/-/codehawk-cli-5.0.0.tgz#7c4d2f2be2002a38713382d6248f22e3df185939"
+  integrity sha512-/ysae6o40q+jdt/foV/oEB5PNFvV/NGIrUZz8B9dwREw0OfG0jI7CzqeZHI9is4M8roeJ0AgbDXcvh+Pl4VUkg==
   dependencies:
     "@babel/core" "^7.7.2"
     "@babel/plugin-transform-typescript" "^7.7.2"

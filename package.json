@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@octokit/webhooks": "^7.6.4",
-    "codehawk-cli": "^4.0.2",
+    "codehawk-cli": "^5.0.0",
     "probot": "^9.5.3"
   },
   "devDependencies": {
