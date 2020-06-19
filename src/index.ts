@@ -1,12 +1,12 @@
 import { Application, Octokit, Context } from 'probot'
 import { calculateComplexity } from 'codehawk-cli'
 import { Webhooks } from '@octokit/webhooks'
-
-// Reference impl. https://github.com/probot/linter/blob/master/index.js
+import { CodehawkComplexityResult } from 'codehawk-cli/build/types'
 
 interface Result {
   filename: string
-  metrics: any
+  metrics: CodehawkComplexityResult | null
+  previousMetrics: CodehawkComplexityResult | null
   message: string
 }
 
@@ -21,8 +21,14 @@ const round = (num: number): number => Math.round(num * 100) / 100
 
 const getScoreEmoji = (score: number): string => {
   if (score > 60) return ':warning:'
-  // if (score > 50) return ':warning:'
+
   return ':white_check_mark:'
+}
+
+const getChangeEmoji = (diff: number): string => {
+  if (diff < 0) return ':chart_with_downwards_trend: :thumbsup:'
+  if (diff > 0) return ':chart_with_upwards_trend: :thumbsdown:'
+  return ''
 }
 
 const formatComplexityScore = (score: number): string => {
@@ -35,11 +41,21 @@ const formatComplexityScore = (score: number): string => {
 
 const generateTableLines = (filteredResults: Array<Result>): string => {
   return filteredResults.map((result) => {
-    const { filename, metrics } = result
-    const { lineEnd, dependencies, codehawkScore } = metrics
-    // TODO need previous score
+    const { filename, metrics, previousMetrics } = result
+
+    if (!metrics) {
+      return ''
+    }
+
+    const { lineEnd, codehawkScore } = metrics
+    const previousCodehawkScore = (previousMetrics ? previousMetrics.codehawkScore : undefined)
+    const previous = previousCodehawkScore ? formatComplexityScore(previousCodehawkScore) : 'N/A'
+    const updated = formatComplexityScore(codehawkScore)
+    const change = codehawkScore - (previousCodehawkScore || 0)
+    const diff = `${change.toFixed(2)}% ${getChangeEmoji(change)}`
+
     return (
-      `| ${filename} | ${lineEnd} | ${dependencies.length} | 0 | ${formatComplexityScore(codehawkScore)} |`
+      `| ${filename} | ${lineEnd} | ${previous} | ${updated} | ${diff} |`
     )
   }).join('\n')
 }
@@ -52,8 +68,8 @@ const generatePrComment = (results: Array<Result>): string => {
 
   ${filteredResults.length} file${filteredResults.length > 1 ? 's' : ''} changed
 
-  | File | Total Lines | No. Dependencies | Complexity (before) | Complexity (after) |
-  | ---- | ----------- | ---------------- | ------------------- | ------------------ |
+  | File | Total Lines | Complexity (before) | Complexity (after) | Change |
+  | ---- | ----------- | ------------------- | ------------------ | ------ |
   ${generateTableLines(filteredResults)}
 
   `
@@ -64,32 +80,46 @@ const analyzeFiles = (
   context: Context<Webhooks.WebhookPayloadPullRequest>
 ) => {
   return Promise.all(compare.data.files.map(async file => {
+    let metrics = null
+    let previousMetrics = null
 
+    // TODO how do file renames get handled?
+    // We are assuming the filename and extension is the same in base and head
+
+    const { filename } = file
+    const extension = filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2)
+    const isTypescript = extension === 'ts' || extension === 'tsx'
+
+    // New content
     const content = await context.github.repos.getContents(
       context.repo({
         path: file.filename,
         ref: context.payload.pull_request.head.ref.replace('refs/heads/', '')
       })
     )
-
     const fileWithContents = content.data as FileWithContent
     const text = Buffer.from(fileWithContents.content, 'base64').toString()
-    const { filename } = file
 
-    // extension
-    const extension = filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2)
-    const isTypescript = extension === 'ts' || extension === 'tsx'
+    // Previous content
+    const previousContent = await context.github.repos.getContents(
+      context.repo({
+        path: file.filename,
+        ref: context.payload.pull_request.base.ref.replace('refs/heads/', '')
+      })
+    )
+    const previousFileWithContents = previousContent.data as FileWithContent
+    const previousText = Buffer.from(previousFileWithContents.content, 'base64').toString()
 
-    if (SUPPORTED_EXTENSIONS.indexOf(extension) < 0) {
-      return {
-        filename,
-        metrics: null
-      }
+    if (SUPPORTED_EXTENSIONS.indexOf(extension) >= 0) {
+      // Flow not supported atm
+      metrics = calculateComplexity(text, extension, isTypescript, false)
+      previousMetrics = calculateComplexity(previousText, extension, isTypescript, false)
     }
 
     return {
       filename: file.filename,
-      metrics: calculateComplexity(text, extension, isTypescript, false) // Flow not supported
+      previousMetrics,
+      metrics
     }
   }))
 }
@@ -105,6 +135,7 @@ export = (app: Application) => {
 
     console.log('analyzing files...')
     const analyzedFiles: Array<any> = await analyzeFiles(compare, context)
+    console.log('analyzedFiles', analyzedFiles)
     const filesWithMetrics = analyzedFiles.filter(f => !!f.metrics)
 
     if (filesWithMetrics.length === 0) {
