@@ -46,14 +46,17 @@ const generateTableLines = (filteredResults: Array<Result>): string => {
       return ''
     }
 
-    const { lineEnd, codehawkScore } = metrics
+    const { lineEnd } = metrics
     // Note - we invert the codehawkScore numbers here.
     // This is because the original scale is confusing.
-    const previousCodehawkScore = (previousMetrics ? 100 - previousMetrics.codehawkScore : undefined)
-    const previous = previousCodehawkScore ? formatComplexityScore(100 - previousCodehawkScore) : 'N/A'
-    const updated = formatComplexityScore(codehawkScore)
-    const change = codehawkScore - (previousCodehawkScore || 0)
-    const diff = `${change.toFixed(2)}% ${getChangeEmoji(change)}`
+    const invertedCodehawkScore = 100 - metrics.codehawkScore
+    const invertedPreviousCodehawkScore = (previousMetrics ? (100 - previousMetrics.codehawkScore) : undefined)
+
+    const previous = invertedPreviousCodehawkScore ? formatComplexityScore(invertedPreviousCodehawkScore) : 'N/A'
+    const updated = formatComplexityScore(invertedCodehawkScore)
+    const change = invertedCodehawkScore - (invertedPreviousCodehawkScore || 0)
+    const sign = change > 0 ? '+' : ''
+    const diff = `${sign}${change.toFixed(2)}% ${getChangeEmoji(change)}`
 
     return (
       `| ${filename} | ${lineEnd} | ${previous} | ${updated} | ${diff} |`
