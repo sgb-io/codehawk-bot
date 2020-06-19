@@ -146,9 +146,10 @@ export = (app: Application) => {
     await context.github.issues.createComment(params)
   }
 
-  app.on('pull_request.edited', async (context) => {
-    await runCodehawkOnPr(context)
-  })
+  // This is handy for debugging the App
+  // app.on('pull_request.edited', async (context) => {
+  //   await runCodehawkOnPr(context)
+  // })
 
   app.on('pull_request.opened', async (context) => {
     await runCodehawkOnPr(context)

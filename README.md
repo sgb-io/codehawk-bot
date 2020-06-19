@@ -2,6 +2,8 @@
 
 > A GitHub App built with [Probot](https://github.com/probot/probot) that GitHub App that runs Codehawk static analysis against your project
 
+![Example Comment on PR](example-comment.jpg)
+
 ## Setup
 
 ```sh
