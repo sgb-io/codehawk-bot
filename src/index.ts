@@ -1,15 +1,12 @@
 import { Application, Octokit, Context } from 'probot'
-// import { addComplexityToFile  } from 'codehawk-cli'
+import { calculateComplexity } from 'codehawk-cli'
 import { Webhooks } from '@octokit/webhooks'
-
-// TODO expose addComplexityToFile from codehawk-cli
-// this would skip coverage mapping and dependency counts
-
-// @see https://github.com/probot/linter/blob/master/index.js
+import { CodehawkComplexityResult } from 'codehawk-cli/build/types'
 
 interface Result {
   filename: string
-  metrics: any
+  metrics: CodehawkComplexityResult | null
+  previousMetrics: CodehawkComplexityResult | null
   message: string
 }
 
@@ -18,15 +15,63 @@ type FileWithContent = Octokit.ReposGetContentsResponse & {
   content: string
 }
 
+const SUPPORTED_EXTENSIONS = ['js', 'jsx', 'ts', 'tsx']
+
+const round = (num: number): number => Math.round(num * 100) / 100
+
+const getScoreEmoji = (score: number): string => {
+  if (score > 60) return ':warning:'
+
+  return ':white_check_mark:'
+}
+
+const getChangeEmoji = (diff: number): string => {
+  if (diff < 0) return ':chart_with_downwards_trend: :thumbsup:'
+  if (diff > 0) return ':chart_with_upwards_trend: :thumbsdown:'
+  return ''
+}
+
+const formatComplexityScore = (score: number): string => {
+
+  const rounded = round(score)
+  const emoji = getScoreEmoji(score)
+
+  return `${rounded} ${emoji}`
+}
+
+const generateTableLines = (filteredResults: Array<Result>): string => {
+  return filteredResults.map((result) => {
+    const { filename, metrics, previousMetrics } = result
+
+    if (!metrics) {
+      return ''
+    }
+
+    const { lineEnd, codehawkScore } = metrics
+    const previousCodehawkScore = (previousMetrics ? previousMetrics.codehawkScore : undefined)
+    const previous = previousCodehawkScore ? formatComplexityScore(previousCodehawkScore) : 'N/A'
+    const updated = formatComplexityScore(codehawkScore)
+    const change = codehawkScore - (previousCodehawkScore || 0)
+    const diff = `${change.toFixed(2)}% ${getChangeEmoji(change)}`
+
+    return (
+      `| ${filename} | ${lineEnd} | ${previous} | ${updated} | ${diff} |`
+    )
+  }).join('\n')
+}
+
 const generatePrComment = (results: Array<Result>): string => {
+  const filteredResults = results.filter(r => !!r.metrics)
 
   return `
-    ### Codehawk Static Analysis Results
-    ${results.map((result) => {
-      return `
-        - ${result.filename}, ${result.metrics}
-      `
-    })}
+  ## Codehawk Static Analysis Results
+
+  ${filteredResults.length} file${filteredResults.length > 1 ? 's' : ''} changed
+
+  | File | Total Lines | Complexity (before) | Complexity (after) | Change |
+  | ---- | ----------- | ------------------- | ------------------ | ------ |
+  ${generateTableLines(filteredResults)}
+
   `
 }
 
@@ -35,58 +80,87 @@ const analyzeFiles = (
   context: Context<Webhooks.WebhookPayloadPullRequest>
 ) => {
   return Promise.all(compare.data.files.map(async file => {
+    let metrics = null
+    let previousMetrics = null
 
+    // TODO how do file renames get handled?
+    // We are assuming the filename and extension is the same in base and head
+
+    const { filename } = file
+    const extension = filename.slice((filename.lastIndexOf(".") - 1 >>> 0) + 2)
+    const isTypescript = extension === 'ts' || extension === 'tsx'
+
+    // New content
     const content = await context.github.repos.getContents(
       context.repo({
         path: file.filename,
         ref: context.payload.pull_request.head.ref.replace('refs/heads/', '')
       })
     )
-
     const fileWithContents = content.data as FileWithContent
     const text = Buffer.from(fileWithContents.content, 'base64').toString()
-    console.log(text)
+
+    // Previous content
+    const previousContent = await context.github.repos.getContents(
+      context.repo({
+        path: file.filename,
+        ref: context.payload.pull_request.base.ref.replace('refs/heads/', '')
+      })
+    )
+    const previousFileWithContents = previousContent.data as FileWithContent
+    const previousText = Buffer.from(previousFileWithContents.content, 'base64').toString()
+
+    if (SUPPORTED_EXTENSIONS.indexOf(extension) >= 0) {
+      // Flow not supported atm
+      metrics = calculateComplexity(text, extension, isTypescript, false)
+      previousMetrics = calculateComplexity(previousText, extension, isTypescript, false)
+    }
 
     return {
       filename: file.filename,
-      // metrics: addComplexityToFile(text)
-      metrics: 'TODO metrics!'
+      previousMetrics,
+      metrics
     }
   }))
 }
 
 export = (app: Application) => {
 
-  app.on('pull_request.edited', async (context) => {
-    
-
+  const runCodehawkOnPr = async (context: Context<Webhooks.WebhookPayloadPullRequest>) => {
     const compare = await context.github.repos.compareCommits(context.repo({
       base: context.payload.pull_request.base.sha,
       head: context.payload.pull_request.head.sha
     }))
 
-    console.log(compare.data)
-    const analyzedFiles: any = await analyzeFiles(compare, context)
-    const comment = generatePrComment(analyzedFiles)
+    const analyzedFiles: Array<any> = await analyzeFiles(compare, context)
+    const filesWithMetrics = analyzedFiles.filter(f => !!f.metrics)
+
+    if (filesWithMetrics.length === 0) {
+      // Do nothing - no metrics were generated for this change
+      return
+    }
+
+    const comment = generatePrComment(filesWithMetrics)
     const params = context.issue({ body: comment })
 
     await context.github.issues.createComment(params)
-    console.log('PR edit detected, analysis was done and comment was added!')
+  }
+
+  // This is handy for debugging the App
+  // app.on('pull_request.edited', async (context) => {
+  //   await runCodehawkOnPr(context)
+  // })
+
+  app.on('pull_request.opened', async (context) => {
+    await runCodehawkOnPr(context)
   })
 
-  // app.on('pull_request.opened', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
+  app.on('pull_request.synchronize', async (context) => {
+    await runCodehawkOnPr(context)
+  })
 
-  // app.on('pull_request.synchronize', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
-
-  // app.on('pull_request.reopened', async (context) => {
-  //   const issueComment = runCodehawkOnPr(context.payload.pull_request)
-  //   await context.github.issues.createComment(issueComment)
-  // })
+  app.on('pull_request.reopened', async (context) => {
+    await runCodehawkOnPr(context)
+  })
 
 }
